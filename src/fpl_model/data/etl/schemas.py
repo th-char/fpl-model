@@ -128,3 +128,11 @@ TABLES: dict[str, dict[str, str]] = {
         "chip_plays": "TEXT",
     },
 }
+
+TABLE_KEYS: dict[str, list[str]] = {
+    "players": ["season", "code"],
+    "gameweek_performances": ["season", "player_code", "gameweek", "fixture_id"],
+    "fixtures": ["season", "fixture_id"],
+    "teams": ["season", "team_code"],
+    "gameweeks": ["season", "gameweek"],
+}

@@ -82,7 +82,7 @@ class TestDatabase:
             }
         )
         db.write("players", df)
-        result = db.read("players", where="element_type = 4")
+        result = db.read("players", where={"element_type": 4})
         assert len(result) == 1
         assert result.iloc[0]["web_name"] == "Haaland"
 

@@ -72,6 +72,7 @@ class TestIngester:
         mock_source.fetch_gameweek_performances = AsyncMock(return_value=mock_gw)
         mock_source.fetch_fixtures = AsyncMock(return_value=mock_fixtures)
         mock_source.fetch_teams = AsyncMock(return_value=mock_teams)
+        mock_source.fetch_gameweeks = AsyncMock(return_value=pd.DataFrame())
 
         await ingester.ingest_season("2024-25", source=mock_source)
 

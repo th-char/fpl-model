@@ -19,6 +19,12 @@ class FPLApiSource(DataSource):
         self.client = httpx.AsyncClient(timeout=30.0)
         self._bootstrap: dict | None = None
 
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, *args):
+        await self.close()
+
     async def _get_bootstrap(self) -> dict:
         if self._bootstrap is not None:
             return self._bootstrap
@@ -59,9 +65,20 @@ class FPLApiSource(DataSource):
         finished_gws = [e["id"] for e in bootstrap["events"] if e["finished"]]
         all_gw_data = []
         for gw in finished_gws:
-            response = await self.client.get(LIVE_GW_URL.format(gw=gw))
-            response.raise_for_status()
-            data = response.json()
+            cache_key = f"event-{gw}-live.json"
+            if self.cache and self.cache.has("fpl_api", "_current", cache_key):
+                data = json.loads(self.cache.get("fpl_api", "_current", cache_key).decode("utf-8"))
+            else:
+                response = await self.client.get(LIVE_GW_URL.format(gw=gw))
+                response.raise_for_status()
+                data = response.json()
+                if self.cache:
+                    self.cache.put(
+                        "fpl_api",
+                        "_current",
+                        cache_key,
+                        json.dumps(data).encode("utf-8"),
+                    )
             for element in data["elements"]:
                 row = element["stats"]
                 row["element"] = element["id"]
@@ -77,6 +94,10 @@ class FPLApiSource(DataSource):
     async def fetch_teams(self, season: str) -> pd.DataFrame:
         bootstrap = await self._get_bootstrap()
         return self._parse_teams(bootstrap)
+
+    async def fetch_gameweeks(self, season: str) -> pd.DataFrame:
+        bootstrap = await self._get_bootstrap()
+        return self._parse_gameweeks(bootstrap)
 
     async def close(self) -> None:
         await self.client.aclose()

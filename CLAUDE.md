@@ -485,3 +485,6 @@ Notes:
 - Team IDs change across seasons; `master_team_list.csv` provides mapping
 - GW CSVs are pre-joined (include name/team text); API data requires joining
 - Understat data needs separate ID mapping (`id_dict.csv`)
+
+# currentDate
+Today's date is 2026-03-08.

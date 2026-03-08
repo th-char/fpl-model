@@ -48,10 +48,10 @@ class SeasonSimulator:
 
     def run(self) -> SimulationResult:
         """Run the full season simulation and return results."""
-        players_df = self.db.read("players", where=f"season = '{self.season}'")
-        gw_perf_df = self.db.read("gameweek_performances", where=f"season = '{self.season}'")
-        fixtures_df = self.db.read("fixtures", where=f"season = '{self.season}'")
-        teams_df = self.db.read("teams", where=f"season = '{self.season}'")
+        players_df = self.db.read("players", where={"season": self.season})
+        gw_perf_df = self.db.read("gameweek_performances", where={"season": self.season})
+        fixtures_df = self.db.read("fixtures", where={"season": self.season})
+        teams_df = self.db.read("teams", where={"season": self.season})
 
         gameweeks = sorted(gw_perf_df["gameweek"].unique())
         if not gameweeks:

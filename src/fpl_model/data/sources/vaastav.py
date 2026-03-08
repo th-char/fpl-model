@@ -16,6 +16,12 @@ class VaastavSource(DataSource):
         self.cache = cache
         self.client = httpx.AsyncClient(timeout=30.0)
 
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, *args):
+        await self.close()
+
     def _build_url(self, season: str, filename: str) -> str:
         return f"{BASE_URL}/{season}/{filename}"
 
@@ -48,6 +54,10 @@ class VaastavSource(DataSource):
     async def fetch_teams(self, season: str) -> pd.DataFrame:
         content = await self._download(season, "teams.csv")
         return self._parse_csv(content)
+
+    async def fetch_gameweeks(self, season: str) -> pd.DataFrame:
+        # Vaastav repo doesn't have a standalone gameweeks CSV
+        return pd.DataFrame()
 
     async def fetch_master_team_list(self) -> pd.DataFrame:
         url = f"{BASE_URL}/master_team_list.csv"

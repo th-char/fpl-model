@@ -19,3 +19,6 @@ class DataSource(ABC):
 
     @abstractmethod
     async def fetch_teams(self, season: str) -> pd.DataFrame: ...
+
+    @abstractmethod
+    async def fetch_gameweeks(self, season: str) -> pd.DataFrame: ...

@@ -2,6 +2,8 @@
 
 from pathlib import Path
 
+import pandas as pd
+
 from fpl_model.data.cache import FileCache
 from fpl_model.data.db import Database
 from fpl_model.data.etl.transformers import FPLApiTransformer, VaastavTransformer
@@ -39,13 +41,18 @@ class Ingester:
 
     async def _ingest_from_source(self, season: str, source: DataSource) -> None:
         """Fetch, transform, and write all tables for a season."""
-        for table in ["players", "gameweek_performances", "fixtures", "teams"]:
-            self.db.clear_table(table, where=f"season = '{season}'")
+        for table in ["players", "gameweek_performances", "fixtures", "teams", "gameweeks"]:
+            self.db.clear_table(table, where={"season": season})
 
         raw_players = await source.fetch_players(season)
         raw_gw = await source.fetch_gameweek_performances(season)
         raw_fixtures = await source.fetch_fixtures(season)
         raw_teams = await source.fetch_teams(season)
+
+        # Fetch gameweeks if the source supports it
+        raw_gameweeks: pd.DataFrame | None = None
+        if hasattr(source, "fetch_gameweeks"):
+            raw_gameweeks = await source.fetch_gameweeks(season)
 
         # Build id-to-code mapping for player cross-referencing
         id_to_code: dict[int, int] = {}
@@ -67,6 +74,11 @@ class Ingester:
         self.db.write("gameweek_performances", gw_perf)
         self.db.write("fixtures", fixtures)
         self.db.write("teams", teams)
+
+        # Write gameweeks if available
+        if raw_gameweeks is not None and not raw_gameweeks.empty:
+            gameweeks = transformer.transform_gameweeks(raw_gameweeks)
+            self.db.write("gameweeks", gameweeks)
 
     async def ingest_seasons(self, seasons: list[str]) -> None:
         """Ingest multiple historical seasons, reusing a single source connection."""
