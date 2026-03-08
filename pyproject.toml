@@ -17,6 +17,9 @@ dev = [
 ]
 ml = [
     "scikit-learn>=1.4",
+    "xgboost>=2.0",
+    "pulp>=2.7",
+    "torch>=2.0",
 ]
 
 [project.scripts]
