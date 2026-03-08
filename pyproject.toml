@@ -1,0 +1,37 @@
+[project]
+name = "fpl-model"
+version = "0.1.0"
+description = "FPL ML pipeline for team recommendations"
+requires-python = ">=3.12"
+dependencies = [
+    "httpx>=0.27",
+    "pandas>=2.2",
+    "click>=8.1",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0",
+    "ruff>=0.4",
+    "pytest-asyncio>=0.23",
+]
+ml = [
+    "scikit-learn>=1.4",
+]
+
+[project.scripts]
+fpl-model = "fpl_model.cli.main:cli"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "N", "W"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
