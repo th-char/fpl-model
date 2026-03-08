@@ -182,10 +182,17 @@ class PPOAgent(ActionModel):
         return actions
 
     def train(self, historical_data: HistoricalData) -> None:
-        """Run PPO training loop using FPLEnvironment for each season."""
+        """Run PPO training loop using FPLEnvironment for each season.
+
+        Each step samples lineup and captain actions from the policy,
+        passes them to the environment, and records the log-probabilities
+        for PPO surrogate loss computation.
+        """
         for _update_round in range(self.train_epochs):
             # Collect trajectories
             all_states: list[np.ndarray] = []
+            all_lineup_actions: list[list[int]] = []  # per-player binary (15,)
+            all_captain_actions: list[int] = []  # index into squad
             all_log_probs: list[float] = []
             all_rewards: list[float] = []
             all_values: list[float] = []
@@ -206,23 +213,73 @@ class PPOAgent(ActionModel):
                             lineup_logits, captain_logits = self._policy(obs_tensor)
                             value = self._value(obs_tensor).item()
 
-                        # Compute log probability of the action (sum of per-player decisions)
-                        lineup_probs = torch.sigmoid(lineup_logits.squeeze(0))
-                        # Clamp for numerical stability
+                        lineup_logits_sq = lineup_logits.squeeze(0)  # (15,)
+                        captain_logits_sq = captain_logits.squeeze(0)  # (15,)
+
+                        # Sample lineup: Bernoulli per player, then decode
+                        # into a valid formation
+                        players = env._state.players[:_NUM_SQUAD_PLAYERS]
+                        starting_xi, bench_order = self._decode_lineup(
+                            lineup_logits_sq, players
+                        )
+
+                        # Record binary action vector for log-prob computation
+                        starter_set = set(starting_xi)
+                        lineup_binary = [
+                            1 if players[i].code in starter_set else 0
+                            for i in range(_NUM_SQUAD_PLAYERS)
+                        ]
+
+                        # Sample captain from starters using categorical
+                        starter_indices = [
+                            i for i, p in enumerate(players) if p.code in starter_set
+                        ]
+                        captain_mask = torch.full((15,), float("-inf"))
+                        for idx in starter_indices:
+                            captain_mask[idx] = captain_logits_sq[idx]
+                        captain_probs = F.softmax(captain_mask, dim=0)
+                        captain_dist = torch.distributions.Categorical(captain_probs)
+                        captain_idx = captain_dist.sample().item()
+                        captain_code = players[captain_idx].code
+
+                        # Vice captain: second highest prob starter
+                        sorted_indices = torch.argsort(captain_probs, descending=True)
+                        vice_idx = sorted_indices[1].item() if len(sorted_indices) > 1 else captain_idx
+                        vice_captain_code = players[vice_idx].code
+
+                        # Compute log-probability of sampled actions
+                        # Lineup: Bernoulli log-prob per player
+                        lineup_probs = torch.sigmoid(lineup_logits_sq)
                         lineup_probs = torch.clamp(lineup_probs, 1e-7, 1 - 1e-7)
-                        log_prob = (
-                            torch.log(lineup_probs).sum()
-                            + F.log_softmax(captain_logits.squeeze(0), dim=0).max()
-                        ).item()
+                        lineup_actions_t = torch.tensor(lineup_binary, dtype=torch.float32)
+                        lineup_log_prob = (
+                            lineup_actions_t * torch.log(lineup_probs)
+                            + (1 - lineup_actions_t) * torch.log(1 - lineup_probs)
+                        ).sum()
+
+                        # Captain: categorical log-prob
+                        captain_log_prob = captain_dist.log_prob(
+                            torch.tensor(captain_idx)
+                        )
+
+                        log_prob = (lineup_log_prob + captain_log_prob).item()
 
                         all_states.append(obs)
+                        all_lineup_actions.append(lineup_binary)
+                        all_captain_actions.append(captain_idx)
                         all_log_probs.append(log_prob)
                         all_values.append(value)
 
-                        # Take null action (keep default lineup) during training
-                        # The agent learns value estimation; action decoding
-                        # happens in recommend()
-                        obs, reward, done, _info = env.step(env.null_action())
+                        # Pass sampled actions to the environment
+                        action_dict = {
+                            "transfers": [],
+                            "starting_xi": starting_xi,
+                            "bench_order": bench_order,
+                            "captain": captain_code,
+                            "vice_captain": vice_captain_code,
+                            "chip": None,
+                        }
+                        obs, reward, done, _info = env.step(action_dict)
 
                         all_rewards.append(reward)
                         all_dones.append(done)
@@ -239,6 +296,8 @@ class PPOAgent(ActionModel):
             # Convert to tensors
             states_t = torch.tensor(np.array(all_states), dtype=torch.float32)
             old_log_probs_t = torch.tensor(all_log_probs, dtype=torch.float32)
+            lineup_actions_t = torch.tensor(all_lineup_actions, dtype=torch.float32)
+            captain_actions_t = torch.tensor(all_captain_actions, dtype=torch.long)
             advantages_t = torch.tensor(advantages, dtype=torch.float32)
             returns_t = torch.tensor(returns, dtype=torch.float32)
 
@@ -253,12 +312,21 @@ class PPOAgent(ActionModel):
             self._value.train()
 
             lineup_logits, captain_logits = self._policy(states_t)
+
+            # Recompute log-probs for the same actions under current policy
             lineup_probs = torch.sigmoid(lineup_logits)
             lineup_probs = torch.clamp(lineup_probs, 1e-7, 1 - 1e-7)
-            new_log_probs = (
-                torch.log(lineup_probs).sum(dim=1)
-                + F.log_softmax(captain_logits, dim=1).max(dim=1).values
-            )
+            new_lineup_log_probs = (
+                lineup_actions_t * torch.log(lineup_probs)
+                + (1 - lineup_actions_t) * torch.log(1 - lineup_probs)
+            ).sum(dim=1)
+
+            captain_log_softmax = F.log_softmax(captain_logits, dim=1)
+            new_captain_log_probs = captain_log_softmax.gather(
+                1, captain_actions_t.unsqueeze(1)
+            ).squeeze(1)
+
+            new_log_probs = new_lineup_log_probs + new_captain_log_probs
 
             # Clipped surrogate loss
             ratio = torch.exp(new_log_probs - old_log_probs_t)

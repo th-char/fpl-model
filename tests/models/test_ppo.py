@@ -126,3 +126,40 @@ class TestPPOAgent:
         # Should not raise
         from fpl_model.models.base import HistoricalData
         agent.train(HistoricalData())  # training uses internal env, not HistoricalData
+
+    def test_train_updates_policy_weights(self, tmp_path):
+        """Training actually updates the policy network weights."""
+        import torch
+
+        db = _setup_db(tmp_path, num_gws=5)
+        agent = PPOAgent(
+            db=db,
+            seasons=["2024-25"],
+            hidden_size=32,
+            train_epochs=2,
+            episodes_per_update=1,
+        )
+
+        # Snapshot weights before training
+        before = {
+            name: param.clone()
+            for name, param in agent._policy.named_parameters()
+        }
+
+        from fpl_model.models.base import HistoricalData
+        agent.train(HistoricalData())
+
+        # At least some weights should have changed
+        changed = any(
+            not torch.equal(before[name], param)
+            for name, param in agent._policy.named_parameters()
+        )
+        assert changed, "Policy weights should change after training"
+
+    def test_create_ppo_agent_factory(self, tmp_path):
+        """Factory function creates a valid PPOAgent."""
+        db = _setup_db(tmp_path)
+        from fpl_model.models.defaults import create_ppo_agent
+
+        agent = create_ppo_agent(db=db, seasons=["2024-25"], hidden_size=32)
+        assert isinstance(agent, PPOAgent)

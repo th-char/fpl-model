@@ -44,7 +44,13 @@ class Database:
         cols_to_write = [c for c in schema_cols if c in df.columns]
         conn = self._connect()
         try:
-            df[cols_to_write].to_sql(table, conn, if_exists="append", index=False, method="multi")
+            # SQLite has a max of 999 SQL variables; chunk to stay under that limit.
+            num_cols = len(cols_to_write)
+            chunksize = max(1, 999 // num_cols) if num_cols > 0 else None
+            df[cols_to_write].to_sql(
+                table, conn, if_exists="append", index=False,
+                method="multi", chunksize=chunksize,
+            )
         finally:
             conn.close()
 

@@ -14,7 +14,7 @@ from fpl_model.simulation.state import SquadState
 class _PointsLSTM(nn.Module):
     """LSTM that takes a sequence of per-GW features and predicts next-GW points."""
 
-    def __init__(self, input_size: int, hidden_size: int, num_layers: int, num_positions: int = 4):
+    def __init__(self, input_size: int, hidden_size: int, num_layers: int, num_positions: int = 5):
         super().__init__()
         self.pos_embedding = nn.Embedding(num_positions + 1, 4)  # 0=unknown, 1-4=positions
         self.lstm = nn.LSTM(input_size + 4, hidden_size, num_layers, batch_first=True)
