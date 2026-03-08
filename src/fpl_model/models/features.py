@@ -67,11 +67,13 @@ def build_player_features(
 
     # Market momentum
     if len(tail) > 0 and "transfers_balance" in tail.columns:
-        features["transfers_balance_avg"] = float(tail["transfers_balance"].mean())
+        tb_mean = tail["transfers_balance"].mean()
+        features["transfers_balance_avg"] = float(tb_mean) if pd.notna(tb_mean) else 0.0
     else:
         features["transfers_balance_avg"] = 0.0
     if len(tail) > 0 and "selected" in tail.columns:
-        features["selected_latest"] = float(tail["selected"].iloc[-1])
+        sel_val = tail["selected"].iloc[-1]
+        features["selected_latest"] = float(sel_val) if pd.notna(sel_val) else 0.0
     else:
         features["selected_latest"] = 0.0
 
