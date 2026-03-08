@@ -27,6 +27,11 @@ class FormPredictor(Predictor):
         gw_perf = data.gameweek_performances
         current_gw = data.current_gameweek
 
+        # Handle empty DataFrame (e.g., initial state before any GWs)
+        if gw_perf.empty or "gameweek" not in gw_perf.columns:
+            predictions = {int(c): self.baseline for c in data.players["code"]}
+            return PlayerPredictions(predictions=predictions)
+
         # Filter to recent gameweeks (before current)
         min_gw = max(1, current_gw - self.lookback)
         recent = gw_perf[(gw_perf["gameweek"] >= min_gw) & (gw_perf["gameweek"] < current_gw)]

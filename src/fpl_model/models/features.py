@@ -33,8 +33,11 @@ def build_player_features(
     Returns a dict of feature_name -> float. Unknown players get all zeros.
     """
     gw_perf = data.gameweek_performances
-    past = gw_perf[(gw_perf["player_code"] == player_code) & (gw_perf["gameweek"] < gw)]
-    past = past.sort_values("gameweek")
+    if gw_perf.empty or "player_code" not in gw_perf.columns:
+        past = pd.DataFrame()
+    else:
+        past = gw_perf[(gw_perf["player_code"] == player_code) & (gw_perf["gameweek"] < gw)]
+        past = past.sort_values("gameweek")
 
     features: dict[str, float] = {}
 
@@ -136,8 +139,11 @@ def build_sequence_features(
     the earlier positions are zero-padded. Unknown players return all zeros.
     """
     gw_perf = data.gameweek_performances
-    past = gw_perf[(gw_perf["player_code"] == player_code) & (gw_perf["gameweek"] < gw)]
-    past = past.sort_values("gameweek")
+    if gw_perf.empty or "player_code" not in gw_perf.columns:
+        past = pd.DataFrame()
+    else:
+        past = gw_perf[(gw_perf["player_code"] == player_code) & (gw_perf["gameweek"] < gw)]
+        past = past.sort_values("gameweek")
 
     # Select feature columns that exist
     available_cols = [c for c in _SEQ_COLS if c in past.columns]

@@ -171,9 +171,20 @@ class TestGreedyOptimizer:
 
 
 class TestDefaultRegistry:
-    def test_form_greedy_registered(self):
+    def test_all_models_registered(self):
         registry = get_default_registry()
-        assert "form-greedy" in registry.list()
+        names = registry.list()
+        assert "form-greedy" in names
+        assert "xgb-greedy" in names
+        assert "xgb-lp" in names
+        assert "sequence-lp" in names
+
+    def test_models_are_action_models(self):
+        from fpl_model.models.base import ActionModel
+        registry = get_default_registry()
+        for name in registry.list():
+            model = registry.get(name)
+            assert isinstance(model, ActionModel)
 
     def test_form_greedy_produces_actions(self):
         state, data = _make_squad_and_data()
