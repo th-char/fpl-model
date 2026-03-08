@@ -3,7 +3,9 @@
 import pandas as pd
 
 from fpl_model.data.db import Database
-from fpl_model.models.base import ActionModel, SeasonData
+from unittest.mock import MagicMock
+
+from fpl_model.models.base import ActionModel, HistoricalData, SeasonData
 from fpl_model.simulation.actions import (
     ChipType,
     PlayChip,
@@ -421,3 +423,146 @@ class TestDataLeakagePrevention:
             if not unfinished.empty:
                 assert unfinished["team_h_score"].isna().all()
                 assert unfinished["team_a_score"].isna().all()
+
+
+class _NoOpModel(ActionModel):
+    """Minimal concrete ActionModel that does nothing."""
+
+    def recommend(self, state: SquadState, data: SeasonData) -> list:
+        return []
+
+    def train(self, historical_data: HistoricalData) -> None:
+        pass
+
+
+class TestMidSeasonRetraining:
+    def _setup_db(self, tmp_path, num_gws=5):
+        db = Database(tmp_path / "test.db")
+        db.create_tables()
+
+        players_data = []
+        for i in range(1, 16):
+            et = 1 if i <= 2 else (2 if i <= 7 else (3 if i <= 12 else 4))
+            players_data.append(
+                {
+                    "season": "2024-25",
+                    "code": i,
+                    "first_name": f"Player{i}",
+                    "second_name": f"Last{i}",
+                    "web_name": f"P{i}",
+                    "element_type": et,
+                    "team_code": (i % 20) + 1,
+                    "now_cost": 50,
+                }
+            )
+        db.write("players", pd.DataFrame(players_data))
+
+        gw_rows = []
+        for gw in range(1, num_gws + 1):
+            for i in range(1, 16):
+                gw_rows.append(
+                    {
+                        "season": "2024-25",
+                        "player_code": i,
+                        "gameweek": gw,
+                        "total_points": 5,
+                        "minutes": 90,
+                        "goals_scored": 0,
+                        "assists": 0,
+                        "value": 50,
+                        "was_home": True,
+                        "opponent_team": 1,
+                    }
+                )
+        db.write("gameweek_performances", pd.DataFrame(gw_rows))
+
+        fixture_rows = []
+        for gw in range(1, num_gws + 1):
+            fixture_rows.append(
+                {
+                    "season": "2024-25",
+                    "fixture_id": gw,
+                    "gameweek": gw,
+                    "team_h": 1,
+                    "team_a": 2,
+                    "team_h_score": 1,
+                    "team_a_score": 0,
+                    "finished": True,
+                }
+            )
+        db.write("fixtures", pd.DataFrame(fixture_rows))
+
+        db.write(
+            "teams",
+            pd.DataFrame(
+                [
+                    {
+                        "season": "2024-25",
+                        "team_code": i,
+                        "name": f"Team{i}",
+                        "short_name": f"T{i}",
+                    }
+                    for i in range(1, 21)
+                ]
+            ),
+        )
+        return db
+
+    def test_retrain_called_periodically(self, tmp_path):
+        """With retrain_every_n_gws=2, model.train() is called during simulation."""
+        db = self._setup_db(tmp_path, num_gws=5)
+        model = MagicMock(spec=_NoOpModel)
+        model.recommend.return_value = []
+        model.train.return_value = None
+        sim = SeasonSimulator(model=model, season="2024-25", db=db, retrain_every_n_gws=2)
+        sim.run()
+        # GWs: 1,2,3,4,5. Retrain triggers when (gw - 1) % 2 == 0 and gw > 1
+        # That's gw=3 and gw=5 => 2 calls
+        assert model.train.call_count >= 1
+
+    def test_no_retrain_by_default(self, tmp_path):
+        """With default retrain_every_n_gws=None, model.train() is never called."""
+        db = self._setup_db(tmp_path, num_gws=3)
+        model = MagicMock(spec=_NoOpModel)
+        model.recommend.return_value = []
+        model.train.return_value = None
+        sim = SeasonSimulator(model=model, season="2024-25", db=db)
+        sim.run()
+        model.train.assert_not_called()
+
+    def test_retrain_uses_only_past_data(self, tmp_path):
+        """Retraining data should not contain future GW data."""
+        db = self._setup_db(tmp_path, num_gws=5)
+        train_calls = []
+
+        class SpyModel(ActionModel):
+            def recommend(self, state, data):
+                return []
+
+            def train(self, historical_data):
+                for season_key, sd in historical_data.seasons.items():
+                    max_gw = (
+                        sd.gameweek_performances["gameweek"].max()
+                        if len(sd.gameweek_performances) > 0
+                        else 0
+                    )
+                    train_calls.append({"gw": sd.current_gameweek, "max_data_gw": max_gw})
+
+        sim = SeasonSimulator(
+            model=SpyModel(), season="2024-25", db=db, retrain_every_n_gws=2
+        )
+        sim.run()
+        assert len(train_calls) >= 1
+        for call in train_calls:
+            assert call["max_data_gw"] < call["gw"]
+
+    def test_retrain_count_matches_expected(self, tmp_path):
+        """Verify exact number of retrain calls for retrain_every_n_gws=2 with 5 GWs."""
+        db = self._setup_db(tmp_path, num_gws=5)
+        model = MagicMock(spec=_NoOpModel)
+        model.recommend.return_value = []
+        model.train.return_value = None
+        sim = SeasonSimulator(model=model, season="2024-25", db=db, retrain_every_n_gws=2)
+        sim.run()
+        # GWs 1..5, retrain at gw=3 ((3-1)%2==0) and gw=5 ((5-1)%2==0)
+        assert model.train.call_count == 2

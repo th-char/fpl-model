@@ -8,7 +8,7 @@ from dataclasses import dataclass
 import pandas as pd
 
 from fpl_model.data.db import Database
-from fpl_model.models.base import ActionModel, SeasonData
+from fpl_model.models.base import ActionModel, HistoricalData, SeasonData
 from fpl_model.simulation.actions import (
     Action,
     ChipType,
@@ -44,10 +44,19 @@ class SimulationResult:
 class SeasonSimulator:
     """Replays a historical FPL season using a given ActionModel."""
 
-    def __init__(self, model: ActionModel, season: str, db: Database) -> None:
+    def __init__(
+        self,
+        model: ActionModel,
+        season: str,
+        db: Database,
+        retrain_every_n_gws: int | None = None,
+        train_seasons: list[str] | None = None,
+    ) -> None:
         self.model = model
         self.season = season
         self.db = db
+        self.retrain_every_n_gws = retrain_every_n_gws
+        self.train_seasons = train_seasons
 
     def run(self) -> SimulationResult:
         """Run the full season simulation and return results."""
@@ -88,6 +97,17 @@ class SeasonSimulator:
                 current_gameweek=gw,
                 season=self.season,
             )
+
+            # Mid-season retraining
+            if (
+                self.retrain_every_n_gws is not None
+                and gw > gameweeks[0]
+                and (gw - gameweeks[0]) % self.retrain_every_n_gws == 0
+            ):
+                historical = self._build_training_data(
+                    gw, gw_perf_df, players_df, fixtures_df, teams_df
+                )
+                self.model.train(historical)
 
             actions = self.model.recommend(state, season_data)
             result.actions_log[gw] = actions
@@ -162,6 +182,49 @@ class SeasonSimulator:
                 state = advance_gameweek(state, transfers_made=len(transfers))
 
         return result
+
+    def _build_training_data(
+        self,
+        current_gw: int,
+        gw_perf_df: pd.DataFrame,
+        players_df: pd.DataFrame,
+        fixtures_df: pd.DataFrame,
+        teams_df: pd.DataFrame,
+    ) -> HistoricalData:
+        """Build training data from past seasons and current season up to current_gw."""
+        historical = HistoricalData()
+
+        # Add full data from other training seasons
+        other_seasons = [s for s in (self.train_seasons or []) if s != self.season]
+        for season in other_seasons:
+            s_players = self.db.read("players", where={"season": season})
+            s_gw_perf = self.db.read("gameweek_performances", where={"season": season})
+            s_fixtures = self.db.read("fixtures", where={"season": season})
+            s_teams = self.db.read("teams", where={"season": season})
+            if not s_gw_perf.empty:
+                max_gw = int(s_gw_perf["gameweek"].max())
+                historical.seasons[season] = SeasonData(
+                    gameweek_performances=s_gw_perf,
+                    fixtures=s_fixtures,
+                    players=s_players,
+                    teams=s_teams,
+                    current_gameweek=max_gw,
+                    season=season,
+                )
+
+        # Add current season data up to (but not including) current_gw
+        past_gw_perf = gw_perf_df[gw_perf_df["gameweek"] < current_gw]
+        if not past_gw_perf.empty:
+            historical.seasons[self.season] = SeasonData(
+                gameweek_performances=past_gw_perf,
+                fixtures=fixtures_df,
+                players=players_df,
+                teams=teams_df,
+                current_gameweek=current_gw,
+                season=self.season,
+            )
+
+        return historical
 
     def _initial_state(
         self,
