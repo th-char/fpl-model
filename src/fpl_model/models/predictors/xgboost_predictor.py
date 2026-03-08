@@ -15,8 +15,9 @@ class XGBoostPredictor(Predictor):
     if the model has not been trained.
     """
 
-    def __init__(self, lookback_start: int = 5) -> None:
+    def __init__(self, lookback_start: int = 5, recency_decay: float = 1.0) -> None:
         self.lookback_start = lookback_start
+        self.recency_decay = recency_decay
         self.model = None
         self._feature_cols: list[str] | None = None
 
@@ -26,6 +27,7 @@ class XGBoostPredictor(Predictor):
 
         rows_X = []
         rows_y = []
+        rows_gw: list[int] = []
 
         for season_name, season_data in historical_data.seasons.items():
             gw_perf = season_data.gameweek_performances
@@ -56,6 +58,7 @@ class XGBoostPredictor(Predictor):
                     feats = build_player_features(visible_data, code, gw)
                     rows_X.append(feats)
                     rows_y.append(float(actual_map[code]))
+                    rows_gw.append(int(gw))
 
         if not rows_X:
             return
@@ -74,7 +77,13 @@ class XGBoostPredictor(Predictor):
             objective="reg:squarederror",
             verbosity=0,
         )
-        self.model.fit(X, y)
+        import numpy as np
+
+        gw_array = np.array(rows_gw)
+        max_gw = gw_array.max()
+        weights = self.recency_decay ** (max_gw - gw_array)
+
+        self.model.fit(X, y, sample_weight=weights)
 
     def predict(self, state: SquadState, data: SeasonData) -> PlayerPredictions:
         """Predict next-GW points for all players."""

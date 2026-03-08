@@ -118,6 +118,46 @@ class TestXGBoostPredictor:
             assert code in preds.predictions
             assert isinstance(preds.predictions[code], float)
 
+    def test_train_with_decay_runs(self):
+        hist = _make_training_data()
+        predictor = XGBoostPredictor(recency_decay=0.9)
+        predictor.train(hist)
+        assert predictor.model is not None
+
+    def test_decay_changes_predictions(self):
+        hist = _make_training_data()
+
+        pred_nodecay = XGBoostPredictor(recency_decay=1.0)
+        pred_nodecay.train(hist)
+
+        pred_decay = XGBoostPredictor(recency_decay=0.5)
+        pred_decay.train(hist)
+
+        data = hist.seasons["2023-24"]
+        data = SeasonData(
+            gameweek_performances=data.gameweek_performances[data.gameweek_performances["gameweek"] <= 10],
+            fixtures=data.fixtures,
+            players=data.players,
+            teams=data.teams,
+            current_gameweek=11,
+            season="2023-24",
+        )
+        state = _make_squad()
+
+        preds1 = pred_nodecay.predict(state, data)
+        preds2 = pred_decay.predict(state, data)
+
+        # At least one player should have a different prediction
+        diffs = [
+            preds1.predictions[code] != preds2.predictions[code]
+            for code in [100, 200, 300]
+        ]
+        assert any(diffs), "Decay should change at least one prediction"
+
+    def test_default_decay_is_no_decay(self):
+        predictor = XGBoostPredictor()
+        assert predictor.recency_decay == 1.0
+
     def test_predict_without_training_uses_fallback(self):
         predictor = XGBoostPredictor()
         hist = _make_training_data()
