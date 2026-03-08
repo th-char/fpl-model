@@ -87,6 +87,45 @@ class TestDatabase:
         assert result.iloc[0]["web_name"] == "Haaland"
 
 
+class TestDatabaseOperations:
+    def test_query_method(self, tmp_path):
+        db = Database(tmp_path / "test.db")
+        db.create_tables()
+        df = pd.DataFrame({
+            "season": ["2024-25"],
+            "code": [1],
+            "first_name": ["Mo"],
+            "second_name": ["Salah"],
+            "web_name": ["Salah"],
+            "element_type": [3],
+            "team_code": [14],
+            "now_cost": [130],
+        })
+        db.write("players", df)
+        result = db.query("SELECT * FROM players WHERE code = 1")
+        assert len(result) == 1
+        assert result.iloc[0]["web_name"] == "Salah"
+
+    def test_clear_table(self, tmp_path):
+        db = Database(tmp_path / "test.db")
+        db.create_tables()
+        df = pd.DataFrame({
+            "season": ["2024-25", "2023-24"],
+            "code": [1, 2],
+            "first_name": ["Mo", "Erling"],
+            "second_name": ["Salah", "Haaland"],
+            "web_name": ["Salah", "Haaland"],
+            "element_type": [3, 4],
+            "team_code": [14, 131],
+            "now_cost": [130, 140],
+        })
+        db.write("players", df)
+        db.clear_table("players", where={"season": "2024-25"})
+        result = db.read("players")
+        assert len(result) == 1
+        assert result.iloc[0]["season"] == "2023-24"
+
+
 class TestSchemas:
     def test_tables_dict_has_required_keys(self):
         assert "players" in TABLES

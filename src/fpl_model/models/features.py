@@ -12,13 +12,6 @@ import pandas as pd
 
 from fpl_model.models.base import SeasonData
 
-# Per-GW feature columns extracted from gameweek_performances
-_GW_STAT_COLS = [
-    "total_points", "minutes", "goals_scored", "assists", "clean_sheets",
-    "bonus", "bps", "expected_goals", "expected_assists",
-    "expected_goal_involvements", "expected_goals_conceded",
-]
-
 # Rolling window sizes for form features
 _WINDOWS = [3, 5, 10]
 

@@ -1,13 +1,19 @@
 # tests/simulation/test_rules.py
 import pandas as pd
+import pytest
 
 from fpl_model.simulation.actions import (
     ChipType,
+    Transfer,
 )
 from fpl_model.simulation.rules import (
     advance_gameweek,
     apply_auto_subs,
+    apply_transfers,
     calculate_transfer_cost,
+    score_gameweek,
+    update_sell_prices,
+    validate_chip,
     validate_formation,
 )
 from fpl_model.simulation.state import PlayerInSquad, SquadState
@@ -133,3 +139,169 @@ class TestAdvanceGameweek:
         squad.free_transfers = 2
         new_state = advance_gameweek(squad, transfers_made=2)
         assert new_state.free_transfers == 1
+
+
+class TestValidateChip:
+    def test_valid_chip(self):
+        squad = make_squad()
+        squad.current_gameweek = 2
+        assert validate_chip(ChipType.BENCH_BOOST, squad) is True
+
+    def test_no_uses_remaining(self):
+        squad = make_squad()
+        squad.chips_available[ChipType.BENCH_BOOST] = 0
+        assert validate_chip(ChipType.BENCH_BOOST, squad) is False
+
+    def test_already_active_chip(self):
+        squad = make_squad()
+        squad.active_chip = ChipType.WILDCARD
+        assert validate_chip(ChipType.BENCH_BOOST, squad) is False
+
+    def test_free_hit_gw1_blocked(self):
+        squad = make_squad()
+        squad.current_gameweek = 1
+        assert validate_chip(ChipType.FREE_HIT, squad) is False
+
+    def test_wildcard_gw1_blocked(self):
+        squad = make_squad()
+        squad.current_gameweek = 1
+        assert validate_chip(ChipType.WILDCARD, squad) is False
+
+    def test_free_hit_allowed_after_gw1(self):
+        squad = make_squad()
+        squad.current_gameweek = 5
+        assert validate_chip(ChipType.FREE_HIT, squad) is True
+
+
+class TestApplyTransfers:
+    def test_basic_transfer(self):
+        squad = make_squad(budget=100)
+        players_df = pd.DataFrame({
+            "code": [99],
+            "now_cost": [50],
+            "element_type": [2],
+        })
+        transfer = Transfer(player_out=3, player_in=99)
+        new_state = apply_transfers(squad, [transfer], players_df)
+        codes = [p.code for p in new_state.players]
+        assert 3 not in codes
+        assert 99 in codes
+
+    def test_budget_updated(self):
+        squad = make_squad(budget=100)
+        players_df = pd.DataFrame({
+            "code": [99],
+            "now_cost": [60],
+            "element_type": [2],
+        })
+        transfer = Transfer(player_out=3, player_in=99)
+        new_state = apply_transfers(squad, [transfer], players_df)
+        # sold player at sell_price=50, bought at 60: budget = 100 + 50 - 60 = 90
+        assert new_state.budget == 90
+
+    def test_insufficient_budget_raises(self):
+        squad = make_squad(budget=0)
+        players_df = pd.DataFrame({
+            "code": [99],
+            "now_cost": [60],
+            "element_type": [2],
+        })
+        transfer = Transfer(player_out=3, player_in=99)
+        with pytest.raises(ValueError, match="Insufficient budget"):
+            apply_transfers(squad, [transfer], players_df)
+
+
+class TestScoreGameweek:
+    def test_basic_scoring(self):
+        squad = make_squad()
+        gw_data = pd.DataFrame({
+            "player_code": list(range(1, 16)),
+            "total_points": [5] * 15,
+            "minutes": [90] * 15,
+        })
+        points = score_gameweek(
+            squad.starting_xi, squad.bench_order,
+            squad.captain, squad.vice_captain, gw_data,
+        )
+        # 11 starters * 5 = 55, captain (8) gets +5 (doubled) = 60
+        assert points == 60
+
+    def test_bench_boost(self):
+        squad = make_squad()
+        gw_data = pd.DataFrame({
+            "player_code": list(range(1, 16)),
+            "total_points": [5] * 15,
+            "minutes": [90] * 15,
+        })
+        points = score_gameweek(
+            squad.starting_xi, squad.bench_order,
+            squad.captain, squad.vice_captain, gw_data,
+            active_chip=ChipType.BENCH_BOOST,
+        )
+        # 11*5 + 4*5 = 75, captain +5 = 80
+        assert points == 80
+
+    def test_triple_captain(self):
+        squad = make_squad()
+        gw_data = pd.DataFrame({
+            "player_code": list(range(1, 16)),
+            "total_points": [5] * 15,
+            "minutes": [90] * 15,
+        })
+        points = score_gameweek(
+            squad.starting_xi, squad.bench_order,
+            squad.captain, squad.vice_captain, gw_data,
+            active_chip=ChipType.TRIPLE_CAPTAIN,
+        )
+        # 11*5 = 55, captain gets triple so +10 = 65
+        assert points == 65
+
+    def test_vice_captain_when_captain_doesnt_play(self):
+        squad = make_squad()
+        minutes = [90] * 15
+        minutes[7] = 0  # captain (code=8, index 7) doesn't play
+        gw_data = pd.DataFrame({
+            "player_code": list(range(1, 16)),
+            "total_points": [5] * 15,
+            "minutes": minutes,
+        })
+        points = score_gameweek(
+            squad.starting_xi, squad.bench_order,
+            squad.captain, squad.vice_captain, gw_data,
+        )
+        # Starting XI sum = 11*5 = 55 (captain's 5 pts still counted in starting_xi sum)
+        # Captain didn't play -> vice_captain bonus = +5
+        assert points == 60
+
+
+class TestUpdateSellPrices:
+    def test_price_increase(self):
+        squad = make_squad()
+        gw_data = pd.DataFrame({
+            "player_code": [3],
+            "value": [54],
+        })
+        new_state = update_sell_prices(squad, gw_data)
+        player3 = next(p for p in new_state.players if p.code == 3)
+        # profit = (54 - 50) // 2 = 2, sell_price = 50 + 2 = 52
+        assert player3.sell_price == 52
+
+    def test_price_decrease(self):
+        squad = make_squad()
+        gw_data = pd.DataFrame({
+            "player_code": [3],
+            "value": [45],
+        })
+        new_state = update_sell_prices(squad, gw_data)
+        player3 = next(p for p in new_state.players if p.code == 3)
+        assert player3.sell_price == 45
+
+    def test_no_change(self):
+        squad = make_squad()
+        gw_data = pd.DataFrame({
+            "player_code": [3],
+            "value": [50],
+        })
+        new_state = update_sell_prices(squad, gw_data)
+        player3 = next(p for p in new_state.players if p.code == 3)
+        assert player3.sell_price == 50
