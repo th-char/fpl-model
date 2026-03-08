@@ -1,18 +1,16 @@
 # tests/simulation/test_rules.py
 import pandas as pd
-import pytest
+
 from fpl_model.simulation.actions import (
-    Transfer, SetCaptain, SetLineup, PlayChip, ChipType,
+    ChipType,
 )
-from fpl_model.simulation.state import SquadState, PlayerInSquad
 from fpl_model.simulation.rules import (
-    validate_formation,
-    apply_transfers,
-    calculate_transfer_cost,
-    apply_auto_subs,
-    score_gameweek,
     advance_gameweek,
+    apply_auto_subs,
+    calculate_transfer_cost,
+    validate_formation,
 )
+from fpl_model.simulation.state import PlayerInSquad, SquadState
 
 
 def make_squad(gk=2, defs=5, mids=5, fwds=3, budget=0):
@@ -86,11 +84,13 @@ class TestAutoSubs:
     def test_auto_sub_replaces_non_playing_starter(self):
         squad = make_squad()
         # Player code=3 (a defender in starting XI) didn't play
-        gw_data = pd.DataFrame({
-            "player_code": [p.code for p in squad.players],
-            "minutes": [90 if p.code != 3 else 0 for p in squad.players],
-            "total_points": [5 if p.code != 3 else 0 for p in squad.players],
-        })
+        gw_data = pd.DataFrame(
+            {
+                "player_code": [p.code for p in squad.players],
+                "minutes": [90 if p.code != 3 else 0 for p in squad.players],
+                "total_points": [5 if p.code != 3 else 0 for p in squad.players],
+            }
+        )
         player_types = {p.code: p.element_type for p in squad.players}
         final_xi, final_bench = apply_auto_subs(
             squad.starting_xi, squad.bench_order, gw_data, player_types
@@ -101,11 +101,13 @@ class TestAutoSubs:
 
     def test_no_sub_if_all_played(self):
         squad = make_squad()
-        gw_data = pd.DataFrame({
-            "player_code": [p.code for p in squad.players],
-            "minutes": [90] * 15,
-            "total_points": [5] * 15,
-        })
+        gw_data = pd.DataFrame(
+            {
+                "player_code": [p.code for p in squad.players],
+                "minutes": [90] * 15,
+                "total_points": [5] * 15,
+            }
+        )
         player_types = {p.code: p.element_type for p in squad.players}
         final_xi, final_bench = apply_auto_subs(
             squad.starting_xi, squad.bench_order, gw_data, player_types

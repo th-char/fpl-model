@@ -34,18 +34,14 @@ def calculate_transfer_cost(num_transfers: int, free_transfers: int) -> int:
     return extra * 4
 
 
-def apply_transfers(
-    state: SquadState, transfers: list, player_data: pd.DataFrame
-) -> SquadState:
+def apply_transfers(state: SquadState, transfers: list, player_data: pd.DataFrame) -> SquadState:
     """Return a new SquadState with *transfers* applied.
 
     *player_data* must contain columns ``code``, ``now_cost``, ``element_type``.
     """
     new_state = deepcopy(state)
     for transfer in transfers:
-        out_player = next(
-            p for p in new_state.players if p.code == transfer.player_out
-        )
+        out_player = next(p for p in new_state.players if p.code == transfer.player_out)
         new_state.players.remove(out_player)
         new_state.budget += out_player.sell_price
 

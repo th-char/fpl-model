@@ -1,8 +1,10 @@
 """Data source for historical FPL data from vaastav/Fantasy-Premier-League GitHub repo."""
 
 from io import StringIO
+
 import httpx
 import pandas as pd
+
 from fpl_model.data.cache import FileCache
 from fpl_model.data.sources.base import DataSource
 
@@ -56,7 +58,9 @@ class VaastavSource(DataSource):
             response.raise_for_status()
             content = response.text
             if self.cache:
-                self.cache.put("vaastav", "_global", "master_team_list.csv", content.encode("utf-8"))
+                self.cache.put(
+                    "vaastav", "_global", "master_team_list.csv", content.encode("utf-8")
+                )
         return self._parse_csv(content)
 
     async def close(self) -> None:

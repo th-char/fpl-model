@@ -1,7 +1,6 @@
 """Tests for the season simulation engine."""
 
 import pandas as pd
-import pytest
 
 from fpl_model.data.db import Database
 from fpl_model.models.base import ActionModel, SeasonData

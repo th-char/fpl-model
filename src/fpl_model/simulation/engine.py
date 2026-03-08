@@ -2,8 +2,7 @@
 
 from __future__ import annotations
 
-from copy import deepcopy
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 
 import pandas as pd
 
@@ -50,9 +49,7 @@ class SeasonSimulator:
     def run(self) -> SimulationResult:
         """Run the full season simulation and return results."""
         players_df = self.db.read("players", where=f"season = '{self.season}'")
-        gw_perf_df = self.db.read(
-            "gameweek_performances", where=f"season = '{self.season}'"
-        )
+        gw_perf_df = self.db.read("gameweek_performances", where=f"season = '{self.season}'")
         fixtures_df = self.db.read("fixtures", where=f"season = '{self.season}'")
         teams_df = self.db.read("teams", where=f"season = '{self.season}'")
 
@@ -86,9 +83,7 @@ class SeasonSimulator:
 
             # Process transfers
             transfers = [a for a in actions if isinstance(a, Transfer)]
-            transfer_cost = calculate_transfer_cost(
-                len(transfers), state.free_transfers
-            )
+            transfer_cost = calculate_transfer_cost(len(transfers), state.free_transfers)
             result.transfer_costs[gw] = transfer_cost
 
             if transfers:

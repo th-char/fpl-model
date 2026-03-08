@@ -1,7 +1,6 @@
 import sqlite3
 
 import pandas as pd
-import pytest
 
 from fpl_model.data.db import Database
 from fpl_model.data.etl.schemas import TABLES
@@ -24,16 +23,18 @@ class TestDatabase:
     def test_write_and_read_players(self, tmp_path):
         db = Database(tmp_path / "test.db")
         db.create_tables()
-        df = pd.DataFrame({
-            "season": ["2024-25"],
-            "code": [1],
-            "first_name": ["Mohamed"],
-            "second_name": ["Salah"],
-            "web_name": ["Salah"],
-            "element_type": [3],
-            "team_code": [14],
-            "now_cost": [130],
-        })
+        df = pd.DataFrame(
+            {
+                "season": ["2024-25"],
+                "code": [1],
+                "first_name": ["Mohamed"],
+                "second_name": ["Salah"],
+                "web_name": ["Salah"],
+                "element_type": [3],
+                "team_code": [14],
+                "now_cost": [130],
+            }
+        )
         db.write("players", df)
         result = db.read("players")
         assert len(result) == 1
@@ -42,22 +43,24 @@ class TestDatabase:
     def test_write_and_read_gameweek_performances(self, tmp_path):
         db = Database(tmp_path / "test.db")
         db.create_tables()
-        df = pd.DataFrame({
-            "season": ["2024-25"],
-            "player_code": [1],
-            "gameweek": [1],
-            "fixture_id": [1],
-            "total_points": [10],
-            "minutes": [90],
-            "goals_scored": [1],
-            "assists": [1],
-            "clean_sheets": [0],
-            "bonus": [3],
-            "bps": [45],
-            "value": [130],
-            "was_home": [True],
-            "opponent_team": [2],
-        })
+        df = pd.DataFrame(
+            {
+                "season": ["2024-25"],
+                "player_code": [1],
+                "gameweek": [1],
+                "fixture_id": [1],
+                "total_points": [10],
+                "minutes": [90],
+                "goals_scored": [1],
+                "assists": [1],
+                "clean_sheets": [0],
+                "bonus": [3],
+                "bps": [45],
+                "value": [130],
+                "was_home": [True],
+                "opponent_team": [2],
+            }
+        )
         db.write("gameweek_performances", df)
         result = db.read("gameweek_performances")
         assert len(result) == 1
@@ -66,16 +69,18 @@ class TestDatabase:
     def test_read_with_query(self, tmp_path):
         db = Database(tmp_path / "test.db")
         db.create_tables()
-        df = pd.DataFrame({
-            "season": ["2024-25", "2024-25"],
-            "code": [1, 2],
-            "first_name": ["Mohamed", "Erling"],
-            "second_name": ["Salah", "Haaland"],
-            "web_name": ["Salah", "Haaland"],
-            "element_type": [3, 4],
-            "team_code": [14, 131],
-            "now_cost": [130, 140],
-        })
+        df = pd.DataFrame(
+            {
+                "season": ["2024-25", "2024-25"],
+                "code": [1, 2],
+                "first_name": ["Mohamed", "Erling"],
+                "second_name": ["Salah", "Haaland"],
+                "web_name": ["Salah", "Haaland"],
+                "element_type": [3, 4],
+                "team_code": [14, 131],
+                "now_cost": [130, 140],
+            }
+        )
         db.write("players", df)
         result = db.read("players", where="element_type = 4")
         assert len(result) == 1

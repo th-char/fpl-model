@@ -1,5 +1,4 @@
 # tests/data/test_cache.py
-from pathlib import Path
 from fpl_model.data.cache import FileCache
 
 

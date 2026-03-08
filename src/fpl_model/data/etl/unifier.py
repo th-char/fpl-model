@@ -1,5 +1,7 @@
 """Unify DataFrames to canonical schemas."""
+
 import pandas as pd
+
 from fpl_model.data.etl.schemas import TABLES
 
 

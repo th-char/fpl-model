@@ -1,7 +1,6 @@
 """CLI entry points for fpl-model."""
 
 import asyncio
-from pathlib import Path
 
 import click
 

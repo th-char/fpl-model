@@ -1,8 +1,9 @@
 import pytest
-from fpl_model.simulation.engine import SimulationResult
-from fpl_model.evaluation.metrics import compute_metrics
+
 from fpl_model.evaluation.comparison import compare_results
+from fpl_model.evaluation.metrics import compute_metrics
 from fpl_model.evaluation.reports import format_report
+from fpl_model.simulation.engine import SimulationResult
 
 
 class TestMetrics:
@@ -28,13 +29,15 @@ class TestComparison:
         r1 = SimulationResult(
             total_points=200,
             gameweek_points={1: 60, 2: 70, 3: 70},
-            actions_log={}, transfer_costs={1: 0, 2: 0, 3: 0},
+            actions_log={},
+            transfer_costs={1: 0, 2: 0, 3: 0},
             budget_history={},
         )
         r2 = SimulationResult(
             total_points=180,
             gameweek_points={1: 50, 2: 60, 3: 70},
-            actions_log={}, transfer_costs={1: 0, 2: 4, 3: 0},
+            actions_log={},
+            transfer_costs={1: 0, 2: 4, 3: 0},
             budget_history={},
         )
         comparison = compare_results({"model_a": r1, "model_b": r2})

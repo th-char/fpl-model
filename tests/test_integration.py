@@ -1,15 +1,13 @@
 """End-to-end integration test: ingest mock data, run simulation, evaluate."""
 
 import pandas as pd
-import pytest
 
 from fpl_model.data.db import Database
-from fpl_model.models.base import ActionModel, SeasonData
-from fpl_model.simulation.actions import SetCaptain, SetLineup, SetViceCaptain
-from fpl_model.simulation.state import SquadState
-from fpl_model.simulation.engine import SeasonSimulator
-from fpl_model.evaluation.metrics import compute_metrics
 from fpl_model.evaluation.comparison import compare_results
+from fpl_model.evaluation.metrics import compute_metrics
+from fpl_model.models.base import ActionModel
+from fpl_model.simulation.actions import SetCaptain, SetLineup, SetViceCaptain
+from fpl_model.simulation.engine import SeasonSimulator
 
 
 class AlwaysFirstModel(ActionModel):
@@ -76,10 +74,7 @@ class TestEndToEnd:
         ]
         db.write("fixtures", pd.DataFrame(fixtures))
 
-        teams = [
-            {"season": "2023-24", "team_code": i, "name": f"Team{i}"}
-            for i in range(1, 21)
-        ]
+        teams = [{"season": "2023-24", "team_code": i, "name": f"Team{i}"} for i in range(1, 21)]
         db.write("teams", pd.DataFrame(teams))
 
     def test_full_pipeline(self, tmp_path):

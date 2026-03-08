@@ -2,8 +2,6 @@
 
 from pathlib import Path
 
-import pandas as pd
-
 from fpl_model.data.cache import FileCache
 from fpl_model.data.db import Database
 from fpl_model.data.etl.transformers import FPLApiTransformer, VaastavTransformer
@@ -22,9 +20,7 @@ class Ingester:
         self.db.create_tables()
         self.cache = FileCache(cache_dir)
 
-    async def ingest_season(
-        self, season: str, source: DataSource | None = None
-    ) -> None:
+    async def ingest_season(self, season: str, source: DataSource | None = None) -> None:
         """Ingest a single season from a data source (defaults to Vaastav)."""
         src = source or VaastavSource(cache=self.cache)
         try:
@@ -41,9 +37,7 @@ class Ingester:
         finally:
             await src.close()
 
-    async def _ingest_from_source(
-        self, season: str, source: DataSource
-    ) -> None:
+    async def _ingest_from_source(self, season: str, source: DataSource) -> None:
         """Fetch, transform, and write all tables for a season."""
         for table in ["players", "gameweek_performances", "fixtures", "teams"]:
             self.db.clear_table(table, where=f"season = '{season}'")

@@ -1,10 +1,15 @@
 import pytest
-from fpl_model.simulation.actions import (
-    Transfer, SetCaptain, SetViceCaptain, SetLineup, PlayChip, ChipType,
-)
-from fpl_model.simulation.state import SquadState, PlayerInSquad
-from fpl_model.models.base import ActionModel, PredictOptimizeModel, Predictor, Optimizer
+
+from fpl_model.models.base import ActionModel
 from fpl_model.models.registry import ModelRegistry
+from fpl_model.simulation.actions import (
+    ChipType,
+    PlayChip,
+    SetCaptain,
+    SetLineup,
+    Transfer,
+)
+from fpl_model.simulation.state import PlayerInSquad, SquadState
 
 
 class TestActions:

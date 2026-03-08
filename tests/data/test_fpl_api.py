@@ -1,8 +1,4 @@
 # tests/data/test_fpl_api.py
-import json
-from unittest.mock import AsyncMock, MagicMock, patch
-import pandas as pd
-import pytest
 from fpl_model.data.sources.base import DataSource
 from fpl_model.data.sources.fpl_api import FPLApiSource
 

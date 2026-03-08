@@ -1,7 +1,4 @@
 # tests/data/test_vaastav.py
-from unittest.mock import AsyncMock, patch
-import pandas as pd
-import pytest
 from fpl_model.data.sources.base import DataSource
 from fpl_model.data.sources.vaastav import VaastavSource
 

@@ -1,5 +1,6 @@
 # tests/test_cli.py
 from click.testing import CliRunner
+
 from fpl_model.cli.main import cli
 
 
