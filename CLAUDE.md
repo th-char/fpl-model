@@ -1,3 +1,82 @@
+# FPL Model — Development Guide
+
+## Project Structure
+```
+src/fpl_model/
+  data/           # ETL: Sources -> Transformers -> Unifier -> SQLite DB
+    etl/          # VaastavSource, VaastavTransformer, Unifier
+    ingest.py     # Ingester (async, orchestrates ETL)
+    db.py         # Database (SQLite wrapper, chunked inserts)
+  models/
+    base.py       # ActionModel, PredictOptimizeModel, Predictor, Optimizer
+    defaults.py   # get_default_registry(), create_ppo_agent()
+    features.py   # Shared feature engineering (XGBoost, LSTM, RL)
+    predictors/   # FormPredictor, XGBoostPredictor, SequencePredictor
+    optimizers/   # GreedyOptimizer, LPOptimizer
+    rl/           # PPOAgent, FPLEnvironment
+  simulation/
+    engine.py     # SeasonSimulator (replays seasons, mid-season retraining)
+    state.py      # SquadState, PlayerInSquad
+    actions.py    # Transfer, SetLineup, SetCaptain, PlayChip, etc.
+    scoring.py    # GW scoring logic
+  evaluation/     # compare_results(), format_comparison()
+  cli/            # Click CLI: ingest, simulate, evaluate, compare, train, recommend
+tests/            # 150 tests
+notebooks/        # model_comparison.ipynb
+docs/plans/       # Design and implementation docs
+```
+
+## Tooling
+- **Package manager:** UV (`/home/node/.local/bin/uv`), Python 3.12
+- **Run tests:** `uv run pytest -x -q`
+- **Lint:** `uv run ruff check src/ tests/ --fix`
+- **CLI:** `uv run fpl-model <command>`
+
+## Key Conventions
+- `element_type`: 1=GK, 2=DEF, 3=MID, 4=FWD, 5=MGR (managers in 2024-25+)
+- `now_cost` / prices in 0.1m units (e.g., 145 = £14.5m)
+- Cross-season player linking via `code` field (stable), NOT `id` (changes per season)
+- SQLite has a 999 variable limit — use chunked inserts (`chunksize` in `db.py`)
+- Ingester is async — use `await ingester.ingest_seasons()` in notebooks
+
+## Models
+| Name | Predictor | Optimizer | Notes |
+|------|-----------|-----------|-------|
+| `form-greedy` | FormPredictor | GreedyOptimizer | Baseline, no training |
+| `xgb-greedy` | XGBoostPredictor | GreedyOptimizer(enable_transfers=True) | 25+ features |
+| `xgb-lp` | XGBoostPredictor | LPOptimizer | ILP via PuLP |
+| `sequence-lp` | SequencePredictor (LSTM) | LPOptimizer | Sequence features |
+| `ppo-agent` | PPOAgent | Built-in policy | Requires db+seasons, use create_ppo_agent() |
+
+### Mid-Season Retraining
+- `SeasonSimulator(retrain_every_n_gws=N, train_seasons=[...])` retrains model periodically
+- Predictors support `recency_decay` param: exponential weighting `decay^(max_gw - gw)`
+- XGBoost uses `sample_weight`, LSTM uses weighted MSE loss
+
+## Key Paths
+- Design docs: `docs/plans/` (pipeline design, advanced models, mid-season retraining)
+- Source code: `src/fpl_model/` (data, models, simulation, evaluation, cli)
+- Tests: `tests/` (150 tests)
+- Notebook: `notebooks/model_comparison.ipynb`
+- DB: `data/fpl.db` (SQLite, gitignored)
+- Cache: `data/cache/` (gitignored)
+
+## Architecture Notes
+- `ActionModel` is universal interface; `PredictOptimizeModel` composes `Predictor` + `Optimizer`
+- `SeasonSimulator` replays historical seasons calling model per GW
+- Shared features in `models/features.py` (used by XGBoost, LSTM, RL)
+- Data flows: Source -> ETL Transformer -> Unifier -> SQLite DB
+- Cross-season player linking via `code` field (stable, unlike `id`)
+
+## Known Limitations
+- LP optimizer: no multi-GW lookahead, no chip heuristics, no paid transfers
+- Greedy optimizer: only free transfers (no paid hits)
+- Recency decay is intra-season only (GW numbers overlap across seasons)
+- `_build_training_data()` doesn't filter future fixture scores during retraining
+- Pending work: Free Hit revert, budget validation & sell price tracking, future data leakage prevention
+
+---
+
 # How to play FPL
 
 Fantasy Premier League (FPL) is a season-long manager game where you build, manage and score points from a virtual 15-player squad based on real Premier League performances. Success requires squad construction, weekly selection, chip/tactical use, and transfer planning. Below is a compact, practical guide to how it works and how to play.
