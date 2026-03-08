@@ -43,6 +43,7 @@ class SequencePredictor(Predictor):
         epochs: int = 20,
         lr: float = 1e-3,
         batch_size: int = 64,
+        recency_decay: float = 1.0,
     ) -> None:
         self.seq_len = seq_len
         self.hidden_size = hidden_size
@@ -50,6 +51,7 @@ class SequencePredictor(Predictor):
         self.epochs = epochs
         self.lr = lr
         self.batch_size = batch_size
+        self.recency_decay = recency_decay
         self.model: _PointsLSTM | None = None
 
     def train(self, historical_data: HistoricalData) -> None:
@@ -57,7 +59,7 @@ class SequencePredictor(Predictor):
         input_size = len(_SEQ_COLS)
         self.model = _PointsLSTM(input_size, self.hidden_size, self.num_layers)
 
-        X_list, pos_list, y_list = [], [], []
+        X_list, pos_list, y_list, gw_list = [], [], [], []
 
         for season_data in historical_data.seasons.values():
             gw_perf = season_data.gameweek_performances
@@ -88,6 +90,7 @@ class SequencePredictor(Predictor):
                     X_list.append(seq)
                     pos_list.append(et)
                     y_list.append(float(actual_map[code]))
+                    gw_list.append(gw)
 
         if not X_list:
             return
@@ -96,8 +99,11 @@ class SequencePredictor(Predictor):
         pos = torch.tensor(pos_list, dtype=torch.long)
         y = torch.tensor(y_list, dtype=torch.float32)
 
+        gw_array = torch.tensor(gw_list, dtype=torch.float32)
+        max_gw = gw_array.max()
+        weights = self.recency_decay ** (max_gw - gw_array)
+
         optimizer = torch.optim.Adam(self.model.parameters(), lr=self.lr)
-        loss_fn = nn.MSELoss()
 
         self.model.train()
         n = len(X)
@@ -106,7 +112,7 @@ class SequencePredictor(Predictor):
             for i in range(0, n, self.batch_size):
                 idx = perm[i:i + self.batch_size]
                 pred = self.model(X[idx], pos[idx])
-                loss = loss_fn(pred, y[idx])
+                loss = (weights[idx] * (pred - y[idx]) ** 2).mean()
                 optimizer.zero_grad()
                 loss.backward()
                 optimizer.step()

@@ -81,6 +81,18 @@ class TestSequencePredictor:
         assert 100 in preds.predictions
         assert 200 in preds.predictions
 
+    def test_train_with_decay_runs(self):
+        hist = _make_training_data()
+        predictor = SequencePredictor(
+            seq_len=5, hidden_size=16, num_layers=1, epochs=2, recency_decay=0.9,
+        )
+        predictor.train(hist)
+        assert predictor.model is not None
+
+    def test_default_decay_is_no_decay(self):
+        predictor = SequencePredictor()
+        assert predictor.recency_decay == 1.0
+
     def test_predict_without_training(self):
         predictor = SequencePredictor(seq_len=5, hidden_size=16, num_layers=1)
         hist = _make_training_data()
