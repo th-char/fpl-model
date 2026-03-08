@@ -7,6 +7,7 @@ from copy import deepcopy
 
 import pandas as pd
 
+from fpl_model.simulation.actions import ChipType
 from fpl_model.simulation.state import PlayerInSquad, SquadState
 
 MIN_GK = 1
@@ -34,10 +35,31 @@ def calculate_transfer_cost(num_transfers: int, free_transfers: int) -> int:
     return extra * 4
 
 
+def validate_chip(
+    chip: ChipType,
+    state: SquadState,
+) -> bool:
+    """Check whether a chip can be played given current state."""
+    # Must have uses remaining
+    if state.chips_available.get(chip, 0) <= 0:
+        return False
+    # Only one chip per GW
+    if state.active_chip is not None:
+        return False
+    # Free Hit can't be played in GW1
+    if chip == ChipType.FREE_HIT and state.current_gameweek == 1:
+        return False
+    # Wildcard can't be played in GW1
+    if chip == ChipType.WILDCARD and state.current_gameweek == 1:
+        return False
+    return True
+
+
 def apply_transfers(state: SquadState, transfers: list, player_data: pd.DataFrame) -> SquadState:
     """Return a new SquadState with *transfers* applied.
 
     *player_data* must contain columns ``code``, ``now_cost``, ``element_type``.
+    Raises ``ValueError`` if the budget is insufficient for any incoming player.
     """
     new_state = deepcopy(state)
     for transfer in transfers:
@@ -47,6 +69,12 @@ def apply_transfers(state: SquadState, transfers: list, player_data: pd.DataFram
 
         in_row = player_data[player_data["code"] == transfer.player_in].iloc[0]
         in_price = int(in_row["now_cost"])
+
+        if new_state.budget < in_price:
+            raise ValueError(
+                f"Insufficient budget: need {in_price} but only have {new_state.budget}"
+            )
+
         new_state.budget -= in_price
         new_state.players.append(
             PlayerInSquad(
@@ -90,6 +118,30 @@ def apply_auto_subs(
     return final_xi, final_bench
 
 
+def update_sell_prices(state: SquadState, gw_data: pd.DataFrame) -> SquadState:
+    """Update sell prices for squad players based on current market value.
+
+    FPL rule: you get 0.1m profit for every 0.2m a player rises.
+    ``sell_price = buy_price + floor((current_price - buy_price) / 2)``
+    But if price drops below buy price, ``sell_price = current_price``.
+    """
+    new_state = deepcopy(state)
+    value_map = dict(zip(gw_data["player_code"], gw_data["value"]))
+
+    for player in new_state.players:
+        current_price = value_map.get(player.code)
+        if current_price is None:
+            continue
+        current_price = int(current_price)
+        if current_price >= player.buy_price:
+            profit = (current_price - player.buy_price) // 2
+            player.sell_price = player.buy_price + profit
+        else:
+            player.sell_price = current_price
+
+    return new_state
+
+
 def score_gameweek(
     starting_xi: list[int],
     bench_order: list[int],
@@ -102,8 +154,6 @@ def score_gameweek(
 
     *gw_data* must have columns ``player_code``, ``total_points``, ``minutes``.
     """
-    from fpl_model.simulation.actions import ChipType
-
     points_map = dict(zip(gw_data["player_code"], gw_data["total_points"]))
     minutes_map = dict(zip(gw_data["player_code"], gw_data["minutes"]))
 

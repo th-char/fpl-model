@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from copy import deepcopy
 from dataclasses import dataclass
 
 import pandas as pd
@@ -23,6 +24,8 @@ from fpl_model.simulation.rules import (
     apply_transfers,
     calculate_transfer_cost,
     score_gameweek,
+    update_sell_prices,
+    validate_chip,
 )
 from fpl_model.simulation.state import PlayerInSquad, SquadState
 
@@ -69,9 +72,17 @@ class SeasonSimulator:
         for gw in gameweeks:
             state.current_gameweek = gw
 
+            # Prevent future data leakage: only show finished fixture results
+            past_fixtures = fixtures_df[fixtures_df["finished"] == 1].copy()
+            future_fixtures = fixtures_df[fixtures_df["finished"] != 1].copy()
+            if not future_fixtures.empty:
+                future_fixtures["team_h_score"] = None
+                future_fixtures["team_a_score"] = None
+            visible_fixtures = pd.concat([past_fixtures, future_fixtures], ignore_index=True)
+
             season_data = SeasonData(
                 gameweek_performances=gw_perf_df[gw_perf_df["gameweek"] <= gw],
-                fixtures=fixtures_df,
+                fixtures=visible_fixtures,
                 players=players_df,
                 teams=teams_df,
                 current_gameweek=gw,
@@ -80,6 +91,13 @@ class SeasonSimulator:
 
             actions = self.model.recommend(state, season_data)
             result.actions_log[gw] = actions
+
+            # Check if Free Hit is being played this GW
+            chip_actions = [a for a in actions if isinstance(a, PlayChip)]
+            is_free_hit = any(a.chip_type == ChipType.FREE_HIT for a in chip_actions)
+
+            if is_free_hit:
+                state.pre_free_hit_state = deepcopy(state)
 
             # Process transfers
             transfers = [a for a in actions if isinstance(a, Transfer)]
@@ -99,8 +117,9 @@ class SeasonSimulator:
                     state.starting_xi = action.starting_xi
                     state.bench_order = action.bench_order
                 elif isinstance(action, PlayChip):
-                    state.active_chip = action.chip_type
-                    state.chips_available[action.chip_type] -= 1
+                    if validate_chip(action.chip_type, state):
+                        state.active_chip = action.chip_type
+                        state.chips_available[action.chip_type] -= 1
 
             # Score the gameweek
             gw_data = gw_perf_df[gw_perf_df["gameweek"] == gw]
@@ -121,10 +140,26 @@ class SeasonSimulator:
 
             result.gameweek_points[gw] = gw_points
             result.total_points += gw_points
+
+            # Update sell prices based on current market values
+            state = update_sell_prices(state, gw_data)
+
             result.budget_history[gw] = state.budget
 
+            # After scoring, revert Free Hit if active
+            if is_free_hit and state.pre_free_hit_state:
+                restored = state.pre_free_hit_state
+                restored.chips_available = state.chips_available  # keep chip usage
+                state = restored
+                transfer_cost = 0  # Free Hit transfers are free
+                result.transfer_costs[gw] = 0
+
             # Advance to next gameweek
-            state = advance_gameweek(state, transfers_made=len(transfers))
+            if is_free_hit:
+                # Free Hit doesn't consume free transfers
+                state = advance_gameweek(state, transfers_made=0)
+            else:
+                state = advance_gameweek(state, transfers_made=len(transfers))
 
         return result
 
@@ -135,17 +170,23 @@ class SeasonSimulator:
         teams_df: pd.DataFrame,
         first_gw: int,
     ) -> SquadState:
-        """Create the initial squad state by picking the 15 cheapest players."""
-        sorted_players = players_df.sort_values("now_cost").head(15)
-        initial_players = [
-            PlayerInSquad(
-                code=int(row["code"]),
-                element_type=int(row["element_type"]),
-                buy_price=int(row["now_cost"]),
-                sell_price=int(row["now_cost"]),
-            )
-            for _, row in sorted_players.iterrows()
-        ]
+        """Create initial squad with valid 2-5-5-3 composition from cheapest players."""
+        required = {1: 2, 2: 5, 3: 5, 4: 3}  # GK, DEF, MID, FWD
+        initial_players = []
+
+        for element_type, count in required.items():
+            type_players = players_df[players_df["element_type"] == element_type]
+            cheapest = type_players.nsmallest(count, "now_cost")
+            for _, row in cheapest.iterrows():
+                initial_players.append(
+                    PlayerInSquad(
+                        code=int(row["code"]),
+                        element_type=int(row["element_type"]),
+                        buy_price=int(row["now_cost"]),
+                        sell_price=int(row["now_cost"]),
+                    )
+                )
+
         state = SquadState(
             players=initial_players,
             budget=1000 - sum(p.buy_price for p in initial_players),
@@ -154,7 +195,7 @@ class SeasonSimulator:
             current_gameweek=first_gw,
         )
 
-        # Let the model set the initial lineup
+        # Let the model set lineup
         season_data = SeasonData(
             gameweek_performances=pd.DataFrame(),
             fixtures=fixtures_df,
